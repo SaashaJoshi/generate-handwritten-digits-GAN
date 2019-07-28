@@ -86,9 +86,62 @@ def generate_fake_samples(g_model, latent_dim, n_samples):
   return img_fake_samples, label_fake_samples
 
 # PLOT GENERATED IMAGES
+def save_plot(examples, epoch, n=10):
+  for i in range(n*n):
+    plt.subplot(n, n, i+1)
+    plt.axis('off')
+    plt.imshow(examples[1, :, :, 0], cmap='gray_r')
+  filename='generated_plot_e{}.png'.format(epoch+1)
+  plt.savefig(filename)
+  plt.close()
 
 # EVALUATE PERFORMANCE
+def sum_performance(epoch, g_model, d_model, dataset, latent_dim, n_samples=100):
+  img_real, label_real=generate_real_samples(dataset, n_samples)
+  _, acc_real=d_model.evaluate(img_real, label_real, verbose=1)
+  img_fake, label_fake=generate_fake_samples(g_model, latent_dim, n_samples)
+  _, acc_fake=d_model.evaluate(img_fake, label_fake, verbose=1)
+  print('Accuracy real: {}, Accuracy fake: {}'.format(acc_real*100, acc_fake*100))
+  save_plot(img_fake, epoch)
+  filename='generated_plot_{}.h5'.format(epoch+1)
+  g_model.save(filename)
 
 # TRAIN GENERATOR AND DISCRIMINATOR
+def train(g_model, d_model, gan_model, dataset, latent_dim, n_epoch=100, n_batch=256):
+  batch_per_epoch=int(dataset.shape[0]/n_batch)
+  half_batch=int(n_batch/2)
+  for i in range(n_epoch):
+    for j in range(batch_per_epoch):
+      img_real, label_real=generate_real_samples(dataset, half_batch)
+      img_fake, label_fake=generate_fake_samples(g_model, latent_dim, half_batch)
+      img, label=np.vstack((img_real, img_fake)), np.vstack((label_real, label_fake))
+      d_loss, _=d_model.train_on_batch(img, label)
+      img_gan=generate_latent_points(latent_dim, n_batch)
+      label_gan=np.ones((n_batch, 1))
+      g_loss=gan_model.train_on_batch(img_gan, label_gan)
+      print('{}, {}/{}, d_loss: {}, g_loss: {}'.format(i+1, j+1, batch_per_epoch, d_loss, g_loss))
+      
+    if (i+1)%10==0:
+      sum_performance(i, g_model, d_model, dataset, latent_dim)
 
 # VARIABLES AND FUNCTION CALL
+latent_dim=100
+d_model=define_discriminator()
+g_model=define_generator(latent_dim)
+gan_model=define_gan(g_model, d_model)
+dataset=load_real_samples()
+train(g_model, d_model, gan_model, dataset, latent_dim)
+
+# GENERATED IMAGES 
+from keras.models import load_model
+model=load_model('generated_plot_100.h5')
+latent_points=generate_latent_points(100, 25)
+x=model.predict(latent_points)
+save_plot(x, 5)
+
+# GENERATED IMAGES FOR A SPECIFIC POINT IN LATENT SPACE
+model=load_model('generated_plot_100.h5')
+vector=np.asarray([[0.0 for _ in range (100)]])
+x=model.predict(vector)
+plt.imshow(x[0, :, :, 0], cmap='gray_r')
+plt.show()
